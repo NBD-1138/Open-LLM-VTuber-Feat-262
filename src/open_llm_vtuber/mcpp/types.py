@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Optional, Any
+from typing import Optional, Any, Awaitable, Callable
 
 
 @dataclass
@@ -40,6 +40,7 @@ class FormattedTool:
     related_server: str
     generic_schema: Optional[dict[str, Any]] = None
     description: str = "No description available."
+    handler: Optional[Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]] = None
 
 
 @dataclass

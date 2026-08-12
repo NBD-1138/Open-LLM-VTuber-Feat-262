@@ -9,6 +9,7 @@ from ..transformers import (
 )
 from ...config_manager import TTSPreprocessorConfig
 from ..input_types import BatchInput, TextSource
+from ..file_prompting import render_file_attachments_for_prompt
 from letta_client import Letta
 
 
@@ -61,15 +62,29 @@ class LettaAgent(AgentInterface):
         for item in gen:
             yield item
 
+    def _create_message_stream(self, messages):
+        messages_resource = self.client.agents.messages
+        stream_kwargs = {
+            "agent_id": self.id,
+            "messages": messages,
+            "stream_tokens": True,
+        }
+
+        if hasattr(messages_resource, "create_stream"):
+            return messages_resource.create_stream(**stream_kwargs)
+        if hasattr(messages_resource, "stream"):
+            return messages_resource.stream(**stream_kwargs)
+        if hasattr(messages_resource, "create"):
+            return messages_resource.create(streaming=True, **stream_kwargs)
+
+        raise AttributeError(
+            "The configured Letta client does not expose a supported streaming "
+            "messages API. Expected one of: create_stream, stream, or create."
+        )
+
     async def chat(self, input_data: BatchInput) -> AsyncIterator[SentenceOutput]:
         messages = self._to_messages(input_data)
-        stream = self.generator_to_async(
-            self.client.agents.messages.create_stream(
-                agent_id=self.id,
-                messages=messages,
-                stream_tokens=True,
-            )
-        )
+        stream = self.generator_to_async(self._create_message_stream(messages))
 
         complete_response = ""
         async for token in stream:
@@ -107,6 +122,13 @@ class LettaAgent(AgentInterface):
             elif text_data.source == TextSource.CLIPBOARD:
                 message_parts.append(f"[Clipboard content: {text_data.content}]")
 
+        if input_data.images:
+            message_parts.append("[User has also provided images]")
+
+        file_prompt = render_file_attachments_for_prompt(input_data.files)
+        if file_prompt:
+            message_parts.append(file_prompt)
+
         return "\n".join(message_parts)
 
     def _to_messages(self, input_data: BatchInput) -> List[Dict[str, Any]]:
@@ -114,6 +136,11 @@ class LettaAgent(AgentInterface):
         Prepare messages list without image support.
         """
         messages = []
+        assistant_context_text = None
+        if input_data.metadata:
+            assistant_context_text = input_data.metadata.get("assistant_context_text")
+        if isinstance(assistant_context_text, str) and assistant_context_text.strip():
+            messages.append({"role": "system", "content": assistant_context_text})
 
         if input_data.images:
             content = []

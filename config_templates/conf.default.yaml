@@ -496,6 +496,92 @@ character_config:
 
 # Live Streaming Integration
 live_config:
+  twitch:
+    enabled: false
+    debug: false
+    client_id: ""
+    client_secret: ""
+    broadcaster_login: ""
+    channel: ""
+    oauth_token: ""
+    refresh_token: ""
+    scopes:
+      - chat:read
+      - chat:edit
+      - moderator:manage:banned_users
+      - channel:read:subscriptions
+    eventsub:
+      transport: "websocket"
+      webhook_public_base: ""
+      enabled: true
+
+  moderation:
+    enabled: false
+    decay_hours: 6
+    warn_text: "Please keep chat friendly."
+    timeout_sequence_seconds:
+      - 30
+      - 600
+    filters:
+      badwords: []
+      block_links: true
+      block_slurs: true
+      block_confusables: true
+      block_mass_caps: true
+      block_repeats: false
+
+  bridge:
+    ws_host: "127.0.0.1"
+    ws_port: 9876
+
+  logging:
+    dir: "logs/live"
+    level: "INFO"
+    rotate_when: "midnight"
+    backup_count: 7
+
+  sandbox:
+    enabled: false
+    interval_seconds: 60
+
+  channel_points:
+    enabled: false
+    actions: {}
+
+  talkback:
+    enabled: false
+    max_chars: 320
+    rate_limit:
+      max_replies_per_minute: 6
+      max_forwards_per_minute: 12
+    context:
+      last_n_messages: 12
+    sanitize:
+      strip_links: true
+      strip_mentions: true
+      strip_badwords: true
+    expressions:
+      allowed:
+        - "neutral"
+        - "happy"
+        - "angry"
+    acknowledgements:
+      enabled: true
+      template: "@{user} answered on stream"
+    twitch_reply:
+      mirror_full_text: false
+    language: "en"
+    ignore_commands: true
+    debug: false
+    notifications:
+      announce_subscriptions: false
+      announce_low_viewer_joins: false
+      low_viewer_threshold: 5
+    tts:
+      enabled: false
+      engine: "edge_tts"
+      voice: "en-US-AvaMultilingualNeural"
+
   bilibili_live:
     # List of BiliBili live room IDs to monitor
     room_ids: [1991478060]

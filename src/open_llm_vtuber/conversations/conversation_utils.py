@@ -9,17 +9,40 @@ from ..message_handler import message_handler
 from .types import WebSocketSend, BroadcastContext
 from .tts_manager import TTSTaskManager
 from ..agent.output_types import SentenceOutput, AudioOutput
-from ..agent.input_types import BatchInput, TextData, ImageData, TextSource, ImageSource
+from ..agent.input_types import (
+    BatchInput,
+    FileData,
+    ImageData,
+    ImageSource,
+    TextData,
+    TextSource,
+)
 from ..asr.asr_interface import ASRInterface
 from ..live2d_model import Live2dModel
 from ..tts.tts_interface import TTSInterface
 from ..utils.stream_audio import prepare_audio_payload
 
 
+async def safe_websocket_send(
+    websocket_send: WebSocketSend,
+    payload: dict[str, Any],
+    description: str,
+) -> bool:
+    """Send a websocket payload without breaking cleanup/finalization paths."""
+    try:
+        await websocket_send(json.dumps(payload))
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to send {description}: {e!r}")
+        logger.debug(f"Failed websocket payload for {description}: {payload!r}")
+        return False
+
+
 # Convert class methods to standalone functions
 def create_batch_input(
     input_text: str,
     images: Optional[List[Dict[str, Any]]],
+    files: Optional[List[Dict[str, Any]]],
     from_name: str,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> BatchInput:
@@ -37,6 +60,16 @@ def create_batch_input(
             for img in (images or [])
         ]
         if images
+        else None,
+        files=[
+            FileData(
+                name=file_data["name"],
+                data=file_data["data"],
+                mime_type=file_data["mime_type"],
+            )
+            for file_data in (files or [])
+        ]
+        if files
         else None,
         metadata=metadata,
     )
@@ -132,15 +165,19 @@ async def handle_audio_output(
 
 async def send_conversation_start_signals(websocket_send: WebSocketSend) -> None:
     """Send initial conversation signals"""
-    await websocket_send(
-        json.dumps(
-            {
-                "type": "control",
-                "text": "conversation-chain-start",
-            }
-        )
+    await safe_websocket_send(
+        websocket_send,
+        {
+            "type": "control",
+            "text": "conversation-chain-start",
+        },
+        "conversation start signal",
     )
-    await websocket_send(json.dumps({"type": "full-text", "text": "Thinking..."}))
+    await safe_websocket_send(
+        websocket_send,
+        {"type": "full-text", "text": "Thinking..."},
+        "thinking indicator",
+    )
 
 
 async def process_user_input(
@@ -168,7 +205,13 @@ async def finalize_conversation_turn(
     """Finalize a conversation turn"""
     if tts_manager.task_list:
         await asyncio.gather(*tts_manager.task_list)
-        await websocket_send(json.dumps({"type": "backend-synth-complete"}))
+        sent_synth_complete = await safe_websocket_send(
+            websocket_send,
+            {"type": "backend-synth-complete"},
+            "backend synthesis completion",
+        )
+        if not sent_synth_complete:
+            return
 
         response = await message_handler.wait_for_response(
             client_uid, "frontend-playback-complete"
@@ -178,7 +221,13 @@ async def finalize_conversation_turn(
             logger.warning(f"No playback completion response from {client_uid}")
             return
 
-    await websocket_send(json.dumps({"type": "force-new-message"}))
+    force_new_sent = await safe_websocket_send(
+        websocket_send,
+        {"type": "force-new-message"},
+        "force-new-message signal",
+    )
+    if not force_new_sent:
+        return
 
     if broadcast_ctx and broadcast_ctx.broadcast_func:
         await broadcast_ctx.broadcast_func(
@@ -201,7 +250,11 @@ async def send_conversation_end_signal(
         "text": "conversation-chain-end",
     }
 
-    await websocket_send(json.dumps(chain_end_msg))
+    await safe_websocket_send(
+        websocket_send,
+        chain_end_msg,
+        "conversation end signal",
+    )
 
     if broadcast_ctx and broadcast_ctx.broadcast_func and broadcast_ctx.group_members:
         await broadcast_ctx.broadcast_func(

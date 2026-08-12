@@ -8,15 +8,20 @@ It uses FastAPI for the server and Starlette for static file serving.
 
 import os
 import shutil
+from pathlib import Path
 
 from fastapi import FastAPI
+from loguru import logger
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 
+from .config_manager.utils import Config
+from .items_catalog import build_items_catalog
+from .live.app import load_live_runtime
 from .routes import init_client_ws_route, init_webtool_routes, init_proxy_route
 from .service_context import ServiceContext
-from .config_manager.utils import Config
+from .websocket_handler import WebSocketHandler
 
 
 # Create a custom StaticFiles class that adds CORS headers
@@ -77,6 +82,8 @@ class WebSocketServer:
         self.default_context_cache = (
             default_context_cache or ServiceContext()
         )  # Use provided context or initialize a new empty one waiting to be loaded
+        self.ws_handler = WebSocketHandler(self.default_context_cache)
+        self.live_runtime = None
         # It will be populated during the initialize method call
 
         # Add global CORS middleware
@@ -91,10 +98,13 @@ class WebSocketServer:
         # Include routes, passing the context instance
         # The context will be populated during the initialize step
         self.app.include_router(
-            init_client_ws_route(default_context_cache=self.default_context_cache),
+            init_client_ws_route(ws_handler=self.ws_handler),
         )
         self.app.include_router(
-            init_webtool_routes(default_context_cache=self.default_context_cache),
+            init_webtool_routes(
+                default_context_cache=self.default_context_cache,
+                live_runtime_provider=lambda: self.live_runtime,
+            ),
         )
 
         # Initialize and include proxy routes if proxy is enabled
@@ -148,10 +158,62 @@ class WebSocketServer:
             name="frontend",
         )
 
+        @self.app.on_event("startup")
+        async def _startup_live_runtime():
+            if self.live_runtime:
+                await self.live_runtime.start()
+
+        @self.app.on_event("shutdown")
+        async def _shutdown_live_runtime():
+            if self.live_runtime:
+                await self.live_runtime.stop()
+            await self.default_context_cache.close()
+
     async def initialize(self):
         """Asynchronously load the service context from config.
         Calling this function is needed if default_context_cache was not provided to the constructor."""
         await self.default_context_cache.load_from_config(self.config)
+        self._build_items_catalog()
+        self._load_live_runtime()
+
+    def _build_items_catalog(self) -> None:
+        project_root = Path(__file__).resolve().parents[2]
+        items_dir = project_root / "live2d-models" / "items"
+
+        try:
+            built_items = build_items_catalog(
+                base_dir=str(items_dir),
+                url_prefix="/live2d-models/items",
+            )
+            logger.info(
+                f"[ItemsCatalog] Generated {len(built_items)} item entries from {items_dir}"
+            )
+        except Exception as exc:
+            logger.warning(f"[ItemsCatalog] Unable to build item catalog: {exc}")
+
+    def _load_live_runtime(self) -> None:
+        config_path = Path("conf.yaml")
+        if not config_path.exists():
+            logger.warning("Live runtime disabled because conf.yaml was not found.")
+            return
+
+        try:
+            host = self.config.system_config.host or "127.0.0.1"
+            if host in {"0.0.0.0", "::"}:
+                host = "127.0.0.1"
+            backend_base_url = f"http://{host}:{self.config.system_config.port}"
+            self.live_runtime = load_live_runtime(
+                str(config_path),
+                self.ws_handler,
+                backend_base_url,
+            )
+            self.ws_handler.register_status_snapshot_provider(
+                self.live_runtime.get_status_messages
+            )
+            logger.info("Live runtime configuration loaded successfully.")
+        except Exception as exc:
+            self.live_runtime = None
+            logger.warning(f"Live runtime disabled: {exc}")
 
     @staticmethod
     def clean_cache():

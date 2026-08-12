@@ -66,6 +66,8 @@ class AgentFactory:
             tool_manager: Optional[ToolManager] = kwargs.get("tool_manager")
             tool_executor: Optional[ToolExecutor] = kwargs.get("tool_executor")
             mcp_prompt_string: str = kwargs.get("mcp_prompt_string", "")
+            has_tools: bool = bool(kwargs.get("has_tools"))
+            use_tools = basic_memory_settings.get("use_mcpp", False) or has_tools
 
             # Create the agent with the LLM and live2d_model
             return BasicMemoryAgent(
@@ -77,7 +79,7 @@ class AgentFactory:
                     "faster_first_response", True
                 ),
                 segment_method=basic_memory_settings.get("segment_method", "pysbd"),
-                use_mcpp=basic_memory_settings.get("use_mcpp", False),
+                use_mcpp=use_tools,
                 interrupt_method=interrupt_method,
                 tool_prompts=tool_prompts,
                 tool_manager=tool_manager,

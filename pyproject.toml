@@ -7,6 +7,7 @@ requires-python = ">=3.10,<3.13"
 dependencies = [
     "anthropic>=0.40.0",
     "azure-cognitiveservices-speech>=1.41.1",
+    "aiohttp>=3.10.0",
     "chardet>=5.2.0",
     "cartesia>=2.0.0", 
     "edge-tts>=7.0.0",
@@ -35,6 +36,7 @@ dependencies = [
     "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "torch>=2.6.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "torch>=2.6.0; sys_platform != 'darwin'",
+    "twitchio>=2.10.0",
     "tqdm>=4.67.1",
     "uvicorn[standard]>=0.33.0",
     "websocket-client>=1.8.0",

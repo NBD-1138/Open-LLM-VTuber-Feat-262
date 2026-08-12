@@ -9,6 +9,7 @@ from pathlib import Path
 from .agent_interface import AgentInterface
 from ..output_types import AudioOutput, Actions, DisplayText
 from ..input_types import BatchInput
+from ..file_prompting import render_file_attachments_for_prompt
 from ...chat_history_manager import get_metadata, update_metadate
 
 
@@ -170,6 +171,11 @@ class HumeAIAgent(AgentInterface):
 
             # Extract main text from BatchInput
             input_text = batch_input.texts[0].content if batch_input.texts else ""
+            file_prompt = render_file_attachments_for_prompt(batch_input.files)
+            if file_prompt:
+                input_text = "\n\n".join(
+                    segment for segment in [input_text, file_prompt] if segment
+                )
 
             # Hume AI doesn't support image input, log warning if images present
             if batch_input.images:

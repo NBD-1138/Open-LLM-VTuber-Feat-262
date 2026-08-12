@@ -28,6 +28,7 @@ async def process_single_conversation(
     client_uid: str,
     user_input: Union[str, np.ndarray],
     images: Optional[List[Dict[str, Any]]] = None,
+    files: Optional[List[Dict[str, Any]]] = None,
     session_emoji: str = np.random.choice(EMOJI_LIST),
     metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
@@ -63,6 +64,7 @@ async def process_single_conversation(
         batch_input = create_batch_input(
             input_text=input_text,
             images=images,
+            files=files,
             from_name=context.character_config.human_name,
             metadata=metadata,
         )
@@ -84,6 +86,8 @@ async def process_single_conversation(
         logger.info(f"User input: {input_text}")
         if images:
             logger.info(f"With {len(images)} images")
+        if files:
+            logger.info(f"With {len(files)} files")
 
         try:
             # agent.chat yields Union[SentenceOutput, Dict[str, Any]]
@@ -137,11 +141,6 @@ async def process_single_conversation(
             # full_response will contain partial response before error
         # --- End processing agent response ---
 
-        # Wait for any pending TTS tasks
-        if tts_manager.task_list:
-            await asyncio.gather(*tts_manager.task_list)
-            await websocket_send(json.dumps({"type": "backend-synth-complete"}))
-
         await finalize_conversation_turn(
             tts_manager=tts_manager,
             websocket_send=websocket_send,
@@ -165,10 +164,15 @@ async def process_single_conversation(
         logger.info(f"🤡👍 Conversation {session_emoji} cancelled because interrupted.")
         raise
     except Exception as e:
-        logger.error(f"Error in conversation chain: {e}")
-        await websocket_send(
-            json.dumps({"type": "error", "message": f"Conversation error: {str(e)}"})
-        )
+        logger.exception(f"Error in conversation chain: {e!r}")
+        try:
+            await websocket_send(
+                json.dumps({"type": "error", "message": f"Conversation error: {e!r}"})
+            )
+        except Exception as send_error:
+            logger.warning(
+                f"Failed to send conversation error to frontend: {send_error!r}"
+            )
         raise
     finally:
         cleanup_conversation(tts_manager, session_emoji)

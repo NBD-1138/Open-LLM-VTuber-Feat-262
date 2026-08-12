@@ -1,30 +1,947 @@
 [
-    {
-        "name": "mao_pro",
-        "description": "",
-        "url": "/live2d-models/mao_pro/runtime/mao_pro.model3.json",
-        "kScale": 0.5,
-        "initialXshift": 0,
-        "initialYshift": 0,
-        "kXOffset": 1150,
-        "idleMotionGroupName": "Idle",
-        "emotionMap": {
-            "neutral": 0,
-            "anger": 2,
-            "disgust": 2,
-            "fear": 1,
-            "joy": 3,
-            "smirk": 3,
-            "sadness": 1,
-            "surprise": 3
+  {
+    "name": "mao_pro",
+    "description": "",
+    "url": "/live2d-models/mao_pro/runtime/mao_pro.model3.json",
+    "kScale": 0.5,
+    "initialXshift": 0,
+    "initialYshift": 0,
+    "kXOffset": 1150,
+    "idleMotionGroupName": "Idle",
+    "emotionMap": {
+      "neutral": 0,
+      "anger": 9,
+      "disgust": 8,
+      "fear": 8,
+      "joy": 4,
+      "smirk": 1,
+      "sadness": 6,
+      "surprise": 8
+    },
+    "tapMotions": {
+      "HitAreaHead": { "": 1 },
+      "HitAreaBody": { "": 1 }
+    }
+  },
+  {
+    "name": "Prototype",
+    "description": "Experimental Military AI (glitchy vtuber model)",
+    "url": "/live2d-models/Prototype/Prototype-建模.model3.json",
+    "kScale": 0.5,
+    "initialXshift": 0,
+    "initialYshift": 0,
+    "kXOffset": 1150,
+    "idleMotionGroupName": "Idle",
+    "emotionMap": {
+      "neutral": 0,
+      "anger": "大脑过载",
+      "disgust": "大脑过载2",
+      "fear": "信号丢失",
+      "joy": "星星眼",
+      "smirk": "钱钱眼",
+      "sadness": "失去高光",
+      "surprise": "白圆眼",
+      "scan": "SCAN",
+      "glitch": "Signal Lost",
+      "overload": "大脑过载",
+      "blush": "脸红"
+    },
+    "tapMotions": {
+      "HitAreaHead": { "X轴(横向转身)反绑": 1 },
+      "HitAreaBody": { "Signal Lost": 1 }
+    }
+  },
+{
+    "name": "shizuku-local",
+    "description": "Orange-Haired Girl, locally available. no internet required.",
+    "url": "/live2d-models/live2d-models/items/Ghost_item/Ghost_item.model3.json",
+    "kScale": 0.5,
+    "initialXshift": 0,
+    "initialYshift": 0,
+    "idleMotionGroupName": "idle",
+    "defaultEmotion" : 0,
+    "emotionMap": {
+        "neutral": 0,
+        "anger": 2,
+        "disgust": 2,
+        "fear": 1,
+        "joy": 3,
+        "smirk": 3,
+        "sadness": 1,
+        "surprise": 3
+    },
+    "tapMotions": {
+        "body": {
+            "tap_body": 30,
+            "shake": 30,
+            "pinch_in": 20,
+            "pinch_out": 20
         },
-        "tapMotions": {
-            "HitAreaHead": {
-                "": 1
-            },
-            "HitAreaBody": {
-                "": 1
-            }
+        "head": {
+            "flick_head": 40,
+            "shake": 20,
+            "pinch_in": 20,
+            "pinch_out": 20
         }
     }
-]
+},
+{
+    "name": "elf",
+    "description": "Elf Maid",
+    "url": "/live2d-models/elf/elfda_m_vts.model3.json",
+    "kScale": 1.0,
+    "initialXshift": 0,
+    "initialYshift": -50000,
+    "idleMotionGroupName": "idle",
+    "defaultEmotion" : "8",
+    "emotionMap": {
+        "neutral": 1,
+        "anger": 13,
+        "disgust": 13,
+        "fear": 12,
+        "joy": 8,
+        "smirk": 9,
+        "sadness": 6,
+        "surprise": 12
+    },
+    "tapMotions": {
+        "body": {
+            "tap_body": 30,
+            "shake": 30,
+            "pinch_in": 20,
+            "pinch_out": 20
+        },
+        "head": {
+            "flick_head": 40,
+            "shake": 20,
+            "pinch_in": 20,
+            "pinch_out": 20
+        }
+    }
+},
+    {
+      "name": "Foot",
+      "description": "Auto-generated from labels for Foot",
+      "url": "/live2d-models/Foot/Foot.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "defaultEmotion": "eye_color",
+      "emotionMap": {
+        "anger": "angry",
+        "sadness": "cry",
+        "neutral": "eye_color",
+		"joy": "heart_eyes",
+		"blush": "blush"
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "angry",
+          "file": "Angry.exp3.json"
+        },
+        {
+          "alias": "blush",
+          "file": "Blush.exp3.json"
+        },
+        {
+          "alias": "brows_color",
+          "file": "Brows color.exp3.json"
+        },
+        {
+          "alias": "cry",
+          "file": "Cry.exp3.json"
+        },
+        {
+          "alias": "eye_color",
+          "file": "Eye Color.exp3.json"
+        },
+        {
+          "alias": "heart_eyes",
+          "file": "Heart Eyes.exp3.json"
+        }
+      ]
+    },
+    {
+      "name": "WonderScale_ui",
+      "description": "Auto-generated from labels for WonderScale_ui",
+      "url": "/live2d-models/WonderScale_ui/WonderScale_ui.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "emotionMap": {},
+      "tapMotions": {
+        "head": {
+          "wonderscale_full": 60,
+          "fuwafuwa_loop": 40
+        },
+        "body": {
+          "wonderscale_full": 30,
+          "fuwafuwa_loop": 70
+        }
+      }
+    },
+    {
+      "name": "model",
+      "description": "Auto-generated from labels for model",
+      "url": "/live2d-models/model/model.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "emotionMap": {},
+      "tapMotions": {
+        "head": {
+          "scene1": 60,
+          "scene2": 40
+        },
+        "body": {
+          "scene1": 30,
+          "scene2": 70
+        }
+      }
+    },
+	    {
+      "name": "Miku-chibi",
+      "description": "Auto-generated from labels for chibi",
+      "url": "/live2d-models/MikuChibi/mikuchibi.model3.json",
+      "kScale": 0.8,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "defaultEmotion": "EyeSmile",
+      "emotionMap": {
+        "anger": "Angry",
+        "sadness": "HollowEye",
+        "neutral": "EyeSmile",
+        "disgust": "Sweat",
+        "fear": "DeadEye",
+		"blush": "Cheek"
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "Angry",
+          "file": "Angry.exp3.json"
+        },
+        {
+          "alias": "Cheek",
+          "file": "Cheek.exp3.json"
+        },
+        {
+          "alias": "HollowEye",
+          "file": "HollowEye.exp3.json"
+        },
+        {
+          "alias": "Frown",
+          "file": "Frown.exp3.json"
+        },
+        {
+          "alias": "EyeSmile",
+          "file": "EyeSmile.exp3.json"
+        },
+        {
+          "alias": "Sweat",
+          "file": "Sweat.exp3.json"
+        },
+		{
+          "alias": "DeadEye",
+          "file": "DeadEye.exp3.json"
+        }
+      ]
+    },
+    {
+      "name": "model_safe",
+      "description": "Auto-generated from labels for model_safe",
+      "url": "/live2d-models/model_safe/model_safe.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "emotionMap": {},
+      "tapMotions": {
+        "head": {
+          "loop_2s": 60,
+          "loop_1s": 40
+        },
+        "body": {
+          "loop_2s": 30,
+          "loop_1s": 70
+        }
+      }
+    },
+	{
+	      "name": "Deadpool",
+      "description": "Auto-generated from labels for model_safe",
+      "url": "/live2d-models/deadpool/deadpool.model3.json",
+      "kScale": 1,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "emotionMap": {},
+      "tapMotions": {
+        "head": {
+          "loop_2s": 60,
+          "loop_1s": 40
+        },
+        "body": {
+          "loop_2s": 30,
+          "loop_1s": 70
+        }
+      }
+    },
+    {
+      "name": "river",
+      "description": "Auto-generated from labels for river",
+      "url": "/live2d-models/river/river.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "idle",
+      "defaultEmotion": "f01_exp",
+    "defaultEmotion" : 0,
+    "emotionMap": {
+        "neutral": 0,
+        "anger": 4,
+        "disgust": 9,
+        "fear": 7,
+        "joy": 6,
+        "smirk": 1,
+        "sadness": 5,
+        "surprise": 7,
+		"blush": 8
+    },
+      "tapMotions": {
+        "head": {
+          "motion1": 60,
+          "motion2": 40
+        },
+        "body": {
+          "motion1": 30,
+          "motion2": 70
+        }
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "f01_exp",
+          "file": "f01.exp.json"
+        },
+        {
+          "alias": "f02_exp",
+          "file": "f02.exp.json"
+        },
+        {
+          "alias": "f03_exp",
+          "file": "f03.exp.json"
+        },
+        {
+          "alias": "f04_exp",
+          "file": "f04.exp.json"
+        },
+        {
+          "alias": "f05_exp",
+          "file": "f05.exp.json"
+        },
+        {
+          "alias": "f06_exp",
+          "file": "f06.exp.json"
+        },
+        {
+          "alias": "f07_exp",
+          "file": "f07.exp.json"
+        },
+        {
+          "alias": "f08_exp",
+          "file": "f08.exp.json"
+        }
+      ]
+    },
+    {
+      "name": "shizuku",
+      "description": "Auto-generated from labels for shizuku",
+      "url": "/live2d-models/shizuku/shizuku.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "emotionMap": {},
+      "tapMotions": {
+        "head": {
+          "expr_01": 60,
+          "expr_03": 40
+        },
+        "body": {
+          "expr_01": 30,
+          "expr_03": 70
+        }
+      }
+    },
+    {
+      "name": "wanko",
+      "description": "Auto-generated from labels for wanko",
+      "url": "/live2d-models/wanko/wanko.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "idle",
+      "emotionMap": {},
+      "tapMotions": {
+        "head": {
+          "idle_01": 60,
+          "idle_02": 40
+        },
+        "body": {
+          "idle_01": 30,
+          "idle_02": 70
+        }
+      }
+    },
+    {
+      "name": "wanko_vts",
+      "description": "Auto-generated from labels for wanko_vts",
+      "url": "/live2d-models/wanko_vts/wanko_vts.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "emotionMap": {},
+      "tapMotions": {
+        "head": {
+          "idle_01": 60,
+          "idle_02": 40
+        },
+        "body": {
+          "idle_01": 30,
+          "idle_02": 70
+        }
+      }
+    },
+    {
+      "name": "wed_16",
+      "description": "Auto-generated from labels for wed_16",
+      "url": "/live2d-models/wed_16/wed_16.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "idle",
+      "defaultEmotion": "f00_exp",
+      "emotionMap": {
+        "neutral": "f00_exp"
+      },
+      "tapMotions": {
+        "head": {
+          "voice_3368": 60,
+          "voice_3369": 40
+        },
+        "body": {
+          "voice_3368": 30,
+          "voice_3369": 70
+        }
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "f00_exp",
+          "file": "F00.exp.json"
+        },
+        {
+          "alias": "f01_exp",
+          "file": "F01.exp.json"
+        },
+        {
+          "alias": "f02_exp",
+          "file": "F02.exp.json"
+        },
+        {
+          "alias": "f03_exp",
+          "file": "F03.exp.json"
+        },
+        {
+          "alias": "f04_exp",
+          "file": "F04.exp.json"
+        },
+        {
+          "alias": "f05_exp",
+          "file": "F05.exp.json"
+        },
+        {
+          "alias": "f06_exp",
+          "file": "F06.exp.json"
+        },
+        {
+          "alias": "f07_exp",
+          "file": "F07.exp.json"
+        },
+        {
+          "alias": "f08_exp",
+          "file": "F08.exp.json"
+        },
+        {
+          "alias": "f09_exp",
+          "file": "F09.exp.json"
+        },
+        {
+          "alias": "f10_exp",
+          "file": "F10.exp.json"
+        }
+      ]
+    },
+    {
+      "name": "whitecat",
+      "description": "Auto-generated from labels for whitecat",
+      "url": "/live2d-models/whitecat/whitecat.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "idle",
+      "emotionMap": {},
+      "tapMotions": {
+        "head": {
+          "expr_00_idle": 60,
+          "expr_01": 40
+        },
+        "body": {
+          "expr_00_idle": 30,
+          "expr_01": 70
+        }
+      }
+    },
+		    {
+      "name": "FluffDragon",
+      "description": "Auto-generated from labels for fluffdragon",
+      "url": "/live2d-models/FluffDragon/FluffDragon.model3.json",
+      "kScale": 1,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "defaultEmotion": "EyeSmile",
+      "emotionMap": {
+        "anger": "Angry",
+        "sadness": "cry",
+        "neutral": "EyeSmile",
+        "disgust": "Sweat",
+		"blush": "Bunny",
+		"joy": "Hearts",
+        "smirk": "Pout",
+		"pout": "Pout"
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "Angry",
+          "file": "Angry.exp3.json"
+        },
+        {
+          "alias": "cry",
+          "file": "Cry.exp3.json"
+        },
+        {
+          "alias": "Hearts",
+          "file": "Hearts.exp3.json"
+        },
+        {
+          "alias": "Pout",
+          "file": "Pout.exp3.json"
+        },
+        {
+          "alias": "Bunny",
+          "file": "Bunny.exp3.json"
+        },
+        {
+          "alias": "Sweat",
+          "file": "Sweat.exp3.json"
+        },
+		{
+          "alias": "DeadEye",
+          "file": "DeadEye.exp3.json"
+        }
+      ]
+    },
+    {
+      "name": "witch L2",
+      "description": "Auto-generated from labels for witch L2",
+      "url": "/live2d-models/witch L2/witch L2.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "defaultEmotion": "expr_1",
+      "emotionMap": {
+        "neutral": "expr_1"
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "expr_1",
+          "file": "1.exp3.json"
+        },
+        {
+          "alias": "expr_10",
+          "file": "10.exp3.json"
+        },
+        {
+          "alias": "expr_11",
+          "file": "11.exp3.json"
+        },
+        {
+          "alias": "expr_12",
+          "file": "12.exp3.json"
+        },
+        {
+          "alias": "expr_2",
+          "file": "2.exp3.json"
+        },
+        {
+          "alias": "expr_3",
+          "file": "3.exp3.json"
+        },
+        {
+          "alias": "expr_4",
+          "file": "4.exp3.json"
+        },
+        {
+          "alias": "expr_5",
+          "file": "5.exp3.json"
+        },
+        {
+          "alias": "expr_6",
+          "file": "6.exp3.json"
+        },
+        {
+          "alias": "expr_66",
+          "file": "66.exp3.json"
+        },
+        {
+          "alias": "expr_7",
+          "file": "7.exp3.json"
+        },
+        {
+          "alias": "expr_8",
+          "file": "8.exp3.json"
+        },
+        {
+          "alias": "expr_9",
+          "file": "9.exp3.json"
+        }
+      ]
+    },
+    {
+      "name": "witch X6",
+      "description": "Auto-generated from labels for witch X6",
+      "url": "/live2d-models/witch X6/witch X6.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "defaultEmotion": "e",
+      "emotionMap": {
+        "neutral": "e"
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "e",
+          "file": "E.exp3.json"
+        },
+        {
+          "alias": "f1",
+          "file": "F1.exp3.json"
+        },
+        {
+          "alias": "f2",
+          "file": "F2.exp3.json"
+        },
+        {
+          "alias": "f3",
+          "file": "F3.exp3.json"
+        },
+        {
+          "alias": "f4",
+          "file": "F4.exp3.json"
+        },
+        {
+          "alias": "f5",
+          "file": "F5.exp3.json"
+        },
+        {
+          "alias": "f6",
+          "file": "F6.exp3.json"
+        },
+        {
+          "alias": "f7",
+          "file": "F7.exp3.json"
+        },
+        {
+          "alias": "m",
+          "file": "M.exp3.json"
+        },
+        {
+          "alias": "n",
+          "file": "N.exp3.json"
+        },
+        {
+          "alias": "n1",
+          "file": "N1.exp3.json"
+        },
+        {
+          "alias": "n2",
+          "file": "N2.exp3.json"
+        },
+        {
+          "alias": "n3",
+          "file": "N3.exp3.json"
+        },
+        {
+          "alias": "n4",
+          "file": "N4.exp3.json"
+        },
+        {
+          "alias": "n5",
+          "file": "N5.exp3.json"
+        },
+        {
+          "alias": "n6",
+          "file": "N6.exp3.json"
+        },
+        {
+          "alias": "n7",
+          "file": "N7.exp3.json"
+        },
+        {
+          "alias": "n8",
+          "file": "N8.exp3.json"
+        },
+        {
+          "alias": "q",
+          "file": "Q.exp3.json"
+        },
+        {
+          "alias": "r",
+          "file": "R.exp3.json"
+        },
+        {
+          "alias": "w",
+          "file": "W.exp3.json"
+        }
+      ]
+    },
+    {
+      "name": "witch X6 R18",
+      "description": "Auto-generated from labels for witch X6 R18",
+      "url": "/live2d-models/witch X6 R18/witch X6 R18.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "defaultEmotion": "e",
+      "emotionMap": {
+        "neutral": "e"
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "e",
+          "file": "E.exp3.json"
+        },
+        {
+          "alias": "f1",
+          "file": "F1.exp3.json"
+        },
+        {
+          "alias": "f2",
+          "file": "F2.exp3.json"
+        },
+        {
+          "alias": "f3",
+          "file": "F3.exp3.json"
+        },
+        {
+          "alias": "f4",
+          "file": "F4.exp3.json"
+        },
+        {
+          "alias": "f5",
+          "file": "F5.exp3.json"
+        },
+        {
+          "alias": "f6",
+          "file": "F6.exp3.json"
+        },
+        {
+          "alias": "f7",
+          "file": "F7.exp3.json"
+        },
+        {
+          "alias": "m",
+          "file": "M.exp3.json"
+        },
+        {
+          "alias": "n1",
+          "file": "N1.exp3.json"
+        },
+        {
+          "alias": "n2",
+          "file": "N2.exp3.json"
+        },
+        {
+          "alias": "n3",
+          "file": "N3.exp3.json"
+        },
+        {
+          "alias": "n4",
+          "file": "N4.exp3.json"
+        },
+        {
+          "alias": "n5",
+          "file": "N5.exp3.json"
+        },
+        {
+          "alias": "n6",
+          "file": "N6.exp3.json"
+        },
+        {
+          "alias": "n7",
+          "file": "N7.exp3.json"
+        },
+        {
+          "alias": "n8",
+          "file": "N8.exp3.json"
+        },
+        {
+          "alias": "q",
+          "file": "Q.exp3.json"
+        },
+        {
+          "alias": "r",
+          "file": "R.exp3.json"
+        },
+        {
+          "alias": "w",
+          "file": "W.exp3.json"
+        }
+      ]
+    },
+    {
+      "name": "witchX8-r18",
+      "description": "Auto-generated from labels for witchX8-r18",
+      "url": "/live2d-models/witchX8-r18/witchX8-r18.model3.json",
+      "kScale": 0.5,
+      "initialXshift": 0,
+      "initialYshift": 0,
+      "kXOffset": 1150,
+      "idleMotionGroupName": "Idle",
+      "defaultEmotion": "e",
+      "emotionMap": {
+        "neutral": "e"
+      },
+      "tapMotions": {
+        "head": {
+          "èœ˜è››è…¿": 100
+        },
+        "body": {
+          "èœ˜è››è…¿": 100
+        }
+      },
+      "expectedExpressionAliases": [
+        {
+          "alias": "e",
+          "file": "E.exp3.json"
+        },
+        {
+          "alias": "f1",
+          "file": "F1.exp3.json"
+        },
+        {
+          "alias": "f2",
+          "file": "F2.exp3.json"
+        },
+        {
+          "alias": "f3",
+          "file": "F3.exp3.json"
+        },
+        {
+          "alias": "f4",
+          "file": "F4.exp3.json"
+        },
+        {
+          "alias": "f5",
+          "file": "F5.exp3.json"
+        },
+        {
+          "alias": "f6",
+          "file": "F6.exp3.json"
+        },
+        {
+          "alias": "f7",
+          "file": "F7.exp3.json"
+        },
+        {
+          "alias": "f8",
+          "file": "F8.exp3.json"
+        },
+        {
+          "alias": "n1",
+          "file": "N1.exp3.json"
+        },
+        {
+          "alias": "n2",
+          "file": "N2.exp3.json"
+        },
+        {
+          "alias": "n3",
+          "file": "N3.exp3.json"
+        },
+        {
+          "alias": "n4",
+          "file": "N4.exp3.json"
+        },
+        {
+          "alias": "n5",
+          "file": "N5.exp3.json"
+        },
+        {
+          "alias": "n6",
+          "file": "N6.exp3.json"
+        },
+        {
+          "alias": "n7",
+          "file": "N7.exp3.json"
+        },
+        {
+          "alias": "n8",
+          "file": "N8.exp3.json"
+        },
+        {
+          "alias": "q",
+          "file": "Q.exp3.json"
+        },
+        {
+          "alias": "r",
+          "file": "R.exp3.json"
+        },
+        {
+          "alias": "t",
+          "file": "T.exp3.json"
+        },
+        {
+          "alias": "w",
+          "file": "W.exp3.json"
+        },
+        {
+          "alias": "y",
+          "file": "Y.exp3.json"
+        }
+      ]
+    }
+  ]

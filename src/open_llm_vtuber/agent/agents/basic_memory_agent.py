@@ -23,6 +23,7 @@ from ..transformers import (
 )
 from ...config_manager import TTSPreprocessorConfig
 from ..input_types import BatchInput, TextSource
+from ..file_prompting import render_file_attachments_for_prompt
 from prompts import prompt_loader
 from ...mcpp.tool_manager import ToolManager
 from ...mcpp.json_detector import StreamJSONDetector
@@ -237,11 +238,20 @@ class BasicMemoryAgent(AgentInterface):
         if input_data.images:
             message_parts.append("\n[User has also provided images]")
 
+        file_prompt = render_file_attachments_for_prompt(input_data.files)
+        if file_prompt:
+            message_parts.append(file_prompt)
+
         return "\n".join(message_parts).strip()
 
     def _to_messages(self, input_data: BatchInput) -> List[Dict[str, Any]]:
         """Prepare messages for LLM API call."""
         messages = self._memory.copy()
+        assistant_context_text = None
+        if input_data.metadata:
+            assistant_context_text = input_data.metadata.get("assistant_context_text")
+        if isinstance(assistant_context_text, str) and assistant_context_text.strip():
+            messages.append({"role": "system", "content": assistant_context_text})
         user_content = []
         text_prompt = self._to_text_prompt(input_data)
         if text_prompt:
@@ -355,17 +365,9 @@ class BasicMemoryAgent(AgentInterface):
                     messages.append(
                         {"role": "assistant", "content": filtered_assistant_content}
                     )
-                    assistant_text_for_memory = "".join(
-                        [
-                            c["text"]
-                            for c in filtered_assistant_content
-                            if c["type"] == "text"
-                        ]
-                    ).strip()
-                    if assistant_text_for_memory:
-                        self._add_message(assistant_text_for_memory, "assistant")
 
                 tool_results_for_llm = []
+                stop_after_tools = False
                 if not self._tool_executor:
                     logger.error(
                         "Claude Tool interaction requested but ToolExecutor is not available."
@@ -382,6 +384,7 @@ class BasicMemoryAgent(AgentInterface):
                         update = await anext(tool_executor_iterator)
                         if update.get("type") == "final_tool_results":
                             tool_results_for_llm = update.get("results", [])
+                            stop_after_tools = bool(update.get("stop_after_tools"))
                             break
                         else:
                             yield update
@@ -393,7 +396,9 @@ class BasicMemoryAgent(AgentInterface):
                 if tool_results_for_llm:
                     messages.append({"role": "user", "content": tool_results_for_llm})
 
-                # stop_reason = None
+                if stop_after_tools:
+                    return
+
                 continue
             else:
                 if current_turn_text:
@@ -497,13 +502,13 @@ class BasicMemoryAgent(AgentInterface):
 
             if detected_prompt_json:
                 logger.info("Processing tools detected via prompt mode JSON.")
-                self._add_message(current_turn_text, "assistant")
 
                 parsed_tools = self._tool_executor.process_tool_from_prompt_json(
                     detected_prompt_json
                 )
                 if parsed_tools:
                     tool_results_for_llm = []
+                    stop_after_tools = False
                     if not self._tool_executor:
                         logger.error(
                             "Prompt Tool interaction requested but ToolExecutor/MCPClient is not available."
@@ -520,6 +525,7 @@ class BasicMemoryAgent(AgentInterface):
                             update = await anext(tool_executor_iterator)
                             if update.get("type") == "final_tool_results":
                                 tool_results_for_llm = update.get("results", [])
+                                stop_after_tools = bool(update.get("stop_after_tools"))
                                 break
                             else:
                                 yield update
@@ -537,14 +543,15 @@ class BasicMemoryAgent(AgentInterface):
                         messages.append(
                             {"role": "user", "content": combined_results_str}
                         )
+                    if stop_after_tools:
+                        return
                 continue
 
             elif pending_tool_calls and assistant_message_for_api:
                 messages.append(assistant_message_for_api)
-                if current_turn_text:
-                    self._add_message(current_turn_text, "assistant")
 
                 tool_results_for_llm = []
+                stop_after_tools = False
                 if not self._tool_executor:
                     logger.error(
                         "OpenAI Tool interaction requested but ToolExecutor/MCPClient is not available."
@@ -561,6 +568,7 @@ class BasicMemoryAgent(AgentInterface):
                         update = await anext(tool_executor_iterator)
                         if update.get("type") == "final_tool_results":
                             tool_results_for_llm = update.get("results", [])
+                            stop_after_tools = bool(update.get("stop_after_tools"))
                             break
                         else:
                             yield update
@@ -571,6 +579,8 @@ class BasicMemoryAgent(AgentInterface):
 
                 if tool_results_for_llm:
                     messages.extend(tool_results_for_llm)
+                if stop_after_tools:
+                    return
                 continue
 
             else:

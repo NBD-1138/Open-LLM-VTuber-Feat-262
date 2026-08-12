@@ -64,11 +64,14 @@ async def handle_conversation_trigger(
         )
     elif msg_type == "text-input":
         user_input = data.get("text", "")
+        if isinstance(data.get("metadata"), dict):
+            metadata = dict(data.get("metadata") or {})
     else:  # mic-audio-end
         user_input = received_data_buffers[client_uid]
         received_data_buffers[client_uid] = np.array([])
 
     images = data.get("images")
+    files = data.get("files")
     session_emoji = np.random.choice(EMOJI_LIST)
 
     group = chat_group_manager.get_client_group(client_uid)
@@ -90,6 +93,7 @@ async def handle_conversation_trigger(
                     initiator_client_uid=client_uid,
                     user_input=user_input,
                     images=images,
+                    files=files,
                     session_emoji=session_emoji,
                     metadata=metadata,
                 )
@@ -103,6 +107,7 @@ async def handle_conversation_trigger(
                 client_uid=client_uid,
                 user_input=user_input,
                 images=images,
+                files=files,
                 session_emoji=session_emoji,
                 metadata=metadata,
             )

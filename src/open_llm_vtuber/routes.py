@@ -1,10 +1,12 @@
 import os
 import json
+from html import escape
 from uuid import uuid4
 import numpy as np
 from datetime import datetime
-from fastapi import APIRouter, WebSocket, UploadFile, File, Response
-from starlette.responses import JSONResponse
+from typing import Any, Callable, Optional
+from fastapi import APIRouter, Query, WebSocket, UploadFile, File, Response
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.websockets import WebSocketDisconnect
 from loguru import logger
 from .service_context import ServiceContext
@@ -12,19 +14,18 @@ from .websocket_handler import WebSocketHandler
 from .proxy_handler import ProxyHandler
 
 
-def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
+def init_client_ws_route(ws_handler: WebSocketHandler) -> APIRouter:
     """
     Create and return API routes for handling the `/client-ws` WebSocket connections.
 
     Args:
-        default_context_cache: Default service context cache for new sessions.
+        ws_handler: Shared websocket handler instance for all client sessions.
 
     Returns:
         APIRouter: Configured router with WebSocket endpoint.
     """
 
     router = APIRouter()
-    ws_handler = WebSocketHandler(default_context_cache)
 
     @router.websocket("/client-ws")
     async def websocket_endpoint(websocket: WebSocket):
@@ -70,7 +71,10 @@ def init_proxy_route(server_url: str) -> APIRouter:
     return router
 
 
-def init_webtool_routes(default_context_cache: ServiceContext) -> APIRouter:
+def init_webtool_routes(
+    default_context_cache: ServiceContext,
+    live_runtime_provider: Optional[Callable[[], Any]] = None,
+) -> APIRouter:
     """
     Create and return API routes for handling web tool interactions.
 
@@ -83,6 +87,66 @@ def init_webtool_routes(default_context_cache: ServiceContext) -> APIRouter:
 
     router = APIRouter()
 
+    def _build_twitch_auth_page(
+        *,
+        title: str,
+        message: str,
+        success: bool,
+    ) -> HTMLResponse:
+        title_html = escape(title)
+        message_html = escape(message)
+        accent = "#38a169" if success else "#e53e3e"
+        html = f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title_html}</title>
+    <style>
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #111827;
+        color: #f9fafb;
+        font-family: Segoe UI, sans-serif;
+      }}
+      main {{
+        width: min(36rem, calc(100vw - 2rem));
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 16px;
+        padding: 1.5rem;
+        background: rgba(17, 24, 39, 0.92);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+      }}
+      h1 {{
+        margin: 0 0 0.75rem;
+        font-size: 1.4rem;
+        color: {accent};
+      }}
+      p {{
+        margin: 0.5rem 0;
+        line-height: 1.5;
+      }}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>{title_html}</h1>
+      <p>{message_html}</p>
+      <p>You can return to Open-LLM-VTuber now.</p>
+    </main>
+  </body>
+</html>"""
+        return HTMLResponse(content=html)
+
+    def _get_live_runtime():
+        runtime = live_runtime_provider() if live_runtime_provider else None
+        if runtime is None:
+            raise RuntimeError("Twitch live runtime is unavailable.")
+        return runtime
+
     @router.get("/web-tool")
     async def web_tool_redirect():
         """Redirect /web-tool to /web_tool/index.html"""
@@ -92,6 +156,83 @@ def init_webtool_routes(default_context_cache: ServiceContext) -> APIRouter:
     async def web_tool_redirect_alt():
         """Redirect /web_tool to /web_tool/index.html"""
         return Response(status_code=302, headers={"Location": "/web-tool/index.html"})
+
+    @router.get("/auth/twitch/start")
+    @router.get("/twitch/start")
+    async def start_twitch_auth(
+        force_verify: bool = Query(
+            default=True,
+            description="Force Twitch to show the authorization prompt again.",
+        ),
+    ):
+        try:
+            runtime = _get_live_runtime()
+            authorize_url = await runtime.begin_twitch_authorization(
+                force_verify=force_verify
+            )
+        except Exception as exc:
+            logger.warning(f"Unable to start Twitch OAuth flow: {exc}")
+            return _build_twitch_auth_page(
+                title="Twitch Authorization Unavailable",
+                message=str(exc),
+                success=False,
+            )
+        return RedirectResponse(authorize_url, status_code=307)
+
+    @router.get("/auth/twitch/callback")
+    @router.get("/twitch/callback")
+    async def complete_twitch_auth(
+        code: Optional[str] = None,
+        state: Optional[str] = None,
+        error: Optional[str] = None,
+        error_description: Optional[str] = None,
+    ):
+        runtime = None
+        try:
+            runtime = _get_live_runtime()
+        except Exception as exc:
+            return _build_twitch_auth_page(
+                title="Twitch Authorization Failed",
+                message=str(exc),
+                success=False,
+            )
+
+        if error:
+            detail = error_description or error
+            await runtime.record_twitch_authorization_failure(
+                f"Twitch authorization was not completed: {detail}"
+            )
+            return _build_twitch_auth_page(
+                title="Twitch Authorization Cancelled",
+                message=detail,
+                success=False,
+            )
+
+        if not code or not state:
+            detail = "Twitch did not return the expected authorization code."
+            await runtime.record_twitch_authorization_failure(detail)
+            return _build_twitch_auth_page(
+                title="Twitch Authorization Failed",
+                message=detail,
+                success=False,
+            )
+
+        try:
+            await runtime.complete_twitch_authorization(code=code, state=state)
+        except Exception as exc:
+            await runtime.record_twitch_authorization_failure(str(exc))
+            logger.warning(f"Twitch OAuth callback failed: {exc}")
+            return _build_twitch_auth_page(
+                title="Twitch Authorization Failed",
+                message=str(exc),
+                success=False,
+            )
+
+        return _build_twitch_auth_page(
+            title="Twitch Authorization Complete",
+            message="Your Twitch account is connected and the new tokens were stored locally.",
+            success=True,
+        )
 
     @router.get("/live2d-models/info")
     async def get_live2d_folder_info():

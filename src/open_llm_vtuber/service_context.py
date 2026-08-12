@@ -17,6 +17,7 @@ from .mcpp.tool_manager import ToolManager
 from .mcpp.mcp_client import MCPClient
 from .mcpp.tool_executor import ToolExecutor
 from .mcpp.tool_adapter import ToolAdapter
+from .mcpp.types import FormattedTool
 
 from .asr.asr_factory import ASRFactory
 from .tts.tts_factory import TTSFactory
@@ -71,6 +72,7 @@ class ServiceContext:
 
         self.send_text: Callable = None
         self.client_uid: str = None
+        self.local_tools_factory: Callable[["ServiceContext"], dict[str, FormattedTool]] | None = None
 
     def __str__(self):
         return (
@@ -105,6 +107,8 @@ class ServiceContext:
         self.tool_executor = None
         self.json_detector = None
         self.mcp_prompt = ""
+        raw_tools_dict: dict[str, FormattedTool] = {}
+        servers_info: dict[str, dict[str, dict]] = {}
 
         if use_mcpp and enabled_servers:
             # 1. Initialize ServerRegistry
@@ -117,42 +121,21 @@ class ServiceContext:
                     "ToolAdapter not initialized before calling _init_mcp_components."
                 )
                 self.mcp_prompt = "[Error: ToolAdapter not initialized]"
-                return  # Exit if ToolAdapter is mandatory and not initialized
-
-            try:
-                (
-                    mcp_prompt_string,
-                    openai_tools,
-                    claude_tools,
-                ) = await self.tool_adapter.get_tools(enabled_servers)
-                # Store the generated prompt string
-                self.mcp_prompt = mcp_prompt_string
-                logger.info(
-                    f"Dynamically generated MCP prompt string (length: {len(self.mcp_prompt)})."
-                )
-                logger.info(
-                    f"Dynamically formatted tools - OpenAI: {len(openai_tools)}, Claude: {len(claude_tools)}."
-                )
-
-                # 3. Initialize ToolManager with the fetched formatted tools
-
-                _, raw_tools_dict = await self.tool_adapter.get_server_and_tool_info(
-                    enabled_servers
-                )
-                self.tool_manager = ToolManager(
-                    formatted_tools_openai=openai_tools,
-                    formatted_tools_claude=claude_tools,
-                    initial_tools_dict=raw_tools_dict,
-                )
-                logger.info("ToolManager initialized with dynamically fetched tools.")
-
-            except Exception as e:
-                logger.error(
-                    f"Failed during dynamic MCP tool construction: {e}", exc_info=True
-                )
-                # Ensure dependent components are not created if construction fails
-                self.tool_manager = None
-                self.mcp_prompt = "[Error constructing MCP tools/prompt]"
+            else:
+                try:
+                    servers_info, raw_tools_dict = (
+                        await self.tool_adapter.get_server_and_tool_info(
+                            enabled_servers
+                        )
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed during dynamic MCP tool construction: {e}",
+                        exc_info=True,
+                    )
+                    raw_tools_dict = {}
+                    servers_info = {}
+                    self.mcp_prompt = "[Error constructing MCP tools/prompt]"
 
             # 4. Initialize MCPClient
             if self.mcp_server_registery:
@@ -187,6 +170,41 @@ class ServiceContext:
                 "MCP components not initialized (use_mcpp is False or no enabled servers)."
             )
 
+        if self.local_tools_factory:
+            try:
+                local_tools = self.local_tools_factory(self) or {}
+            except Exception as e:
+                logger.error(f"Failed to build local tools: {e}", exc_info=True)
+                local_tools = {}
+
+            if local_tools:
+                raw_tools_dict.update(local_tools)
+                for tool_name, tool in local_tools.items():
+                    servers_info.setdefault(tool.related_server, {})[tool_name] = {
+                        "description": tool.description,
+                        "parameters": tool.input_schema.get("properties", {}),
+                        "required": tool.input_schema.get("required", []),
+                    }
+                logger.info(f"Registered {len(local_tools)} local tool(s) for this session.")
+
+        if raw_tools_dict:
+            formatter = self.tool_adapter or ToolAdapter(
+                server_registery=self.mcp_server_registery or ServerRegistry()
+            )
+            openai_tools, claude_tools = formatter.format_tools_for_api(raw_tools_dict)
+            self.tool_manager = ToolManager(
+                formatted_tools_openai=openai_tools,
+                formatted_tools_claude=claude_tools,
+                initial_tools_dict=raw_tools_dict,
+            )
+            self.tool_executor = ToolExecutor(self.mcp_client, self.tool_manager)
+            if servers_info:
+                self.mcp_prompt = formatter.construct_mcp_prompt_string(servers_info)
+            logger.info(
+                f"ToolManager initialized with {len(openai_tools)} OpenAI tool(s) and "
+                f"{len(claude_tools)} Claude tool(s)."
+            )
+
     async def close(self):
         """Clean up resources, especially the MCPClient."""
         logger.info("Closing ServiceContext resources...")
@@ -213,6 +231,7 @@ class ServiceContext:
         tool_adapter: ToolAdapter | None = None,
         send_text: Callable = None,
         client_uid: str = None,
+        local_tools_factory: Callable[["ServiceContext"], dict[str, FormattedTool]] | None = None,
     ) -> None:
         """
         Load the ServiceContext with the reference of the provided instances.
@@ -237,6 +256,7 @@ class ServiceContext:
         self.tool_adapter = tool_adapter
         self.send_text = send_text
         self.client_uid = client_uid
+        self.local_tools_factory = local_tools_factory
 
         # Initialize session-specific MCP components
         await self._init_mcp_components(
@@ -391,6 +411,7 @@ class ServiceContext:
                 tool_manager=self.tool_manager,
                 tool_executor=self.tool_executor,
                 mcp_prompt_string=self.mcp_prompt,
+                has_tools=bool(self.tool_manager and self.tool_manager.tools),
             )
 
             logger.debug(f"Agent choice: {agent_config.conversation_agent_choice}")
@@ -463,6 +484,21 @@ class ServiceContext:
                 continue
 
             persona_prompt += prompt_content
+
+        persona_prompt += """
+
+Assistant automation guidance:
+- You are a gaming companion, not an automatic narrator.
+- Use only named automation commands exposed by the current tool catalogue.
+- Never invent a command ID.
+- Never describe raw keyboard bindings, macro steps, or low-level action lists.
+- Never claim a command ran until a successful result is returned.
+- Prefer suggestions over actions when uncertain.
+- Keep operational speech brief.
+- Do not repeatedly suggest the same command.
+- It is acceptable to remain silent.
+- Explain blocked or failed automation briefly and naturally.
+"""
 
         logger.debug("\n === System Prompt ===")
         logger.debug(persona_prompt)

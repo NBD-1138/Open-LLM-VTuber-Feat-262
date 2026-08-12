@@ -14,11 +14,26 @@ from .types import ToolCallObject
 from .mcp_client import MCPClient
 from .tool_manager import ToolManager
 
+MAX_WEB_SEARCH_RESULT_LENGTH = 2_000
+MAX_WEB_FETCH_RESULT_LENGTH = 4_000
+MAX_WEB_STATUS_RESULT_LENGTH = 500
+WEB_SEARCH_TOOL_NAMES = {"search", "fetch_content"}
+
+
+def _normalize_tool_text(value: str) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
+def _clip_tool_text(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 3].rstrip()}..."
+
 
 class ToolExecutor:
     def __init__(
         self,
-        mcp_client: MCPClient,
+        mcp_client: MCPClient | None,
         tool_manager: ToolManager,
     ):
         self._mcp_client = mcp_client
@@ -74,6 +89,34 @@ class ToolExecutor:
             parse_error = True
 
         return tool_name, tool_id, tool_input, is_error, result_content, parse_error
+
+    def _prepare_tool_text_for_llm(self, tool_name: str, text_content: str) -> str:
+        if tool_name not in WEB_SEARCH_TOOL_NAMES:
+            return text_content
+
+        normalized = _normalize_tool_text(text_content)
+        if not normalized:
+            return normalized
+
+        if tool_name == "search":
+            return _clip_tool_text(normalized, MAX_WEB_SEARCH_RESULT_LENGTH)
+
+        clipped = _clip_tool_text(normalized, MAX_WEB_FETCH_RESULT_LENGTH)
+        if clipped == normalized:
+            return clipped
+        return (
+            f"{clipped}\n\n"
+            "[Fetched page content was truncated. Summarize only the relevant answer "
+            "briefly in the user's language.]"
+        )
+
+    def _prepare_tool_text_for_status(self, tool_name: str, text_content: str) -> str:
+        if tool_name not in WEB_SEARCH_TOOL_NAMES:
+            return text_content
+        normalized = _normalize_tool_text(text_content)
+        if not normalized:
+            return normalized
+        return _clip_tool_text(normalized, MAX_WEB_STATUS_RESULT_LENGTH)
 
     def format_tool_result(
         self,
@@ -159,6 +202,7 @@ class ToolExecutor:
     ) -> AsyncIterator[Dict[str, Any]]:
         """Execute tools and yield status updates."""
         tool_results_for_llm = []
+        stop_after_tools = False
 
         logger.info(f"Executing {len(tool_calls)} tool(s) for {caller_mode} caller.")
         for call in tool_calls:
@@ -221,9 +265,16 @@ class ToolExecutor:
                 metadata,
                 content_items,
             ) = await self.run_single_tool(tool_name, tool_id, tool_input)
+            text_content = self._prepare_tool_text_for_llm(tool_name, text_content)
+            stop_after_tool = bool(metadata.get("stop_after_tool"))
+            suppress_result_for_llm = bool(
+                metadata.get("suppress_result_for_llm", stop_after_tool)
+            )
 
             # Determine content for status update and LLM result format
-            status_content = text_content  # Default to text content
+            status_content = self._prepare_tool_text_for_status(
+                tool_name, text_content
+            )
             llm_formatted_content = text_content  # Default to text content for LLM
 
             if content_items:
@@ -289,16 +340,28 @@ class ToolExecutor:
             yield status_update
 
             # Format result for LLM and add to list
-            formatted_result = self.format_tool_result(
-                caller_mode, tool_id, llm_formatted_content, is_error
-            )
-            if formatted_result:
-                tool_results_for_llm.append(formatted_result)
+            if not suppress_result_for_llm:
+                formatted_result = self.format_tool_result(
+                    caller_mode, tool_id, llm_formatted_content, is_error
+                )
+                if formatted_result:
+                    tool_results_for_llm.append(formatted_result)
+
+            if stop_after_tool:
+                stop_after_tools = True
+                logger.info(
+                    f"Stopping tool execution loop after terminal tool '{tool_name}'."
+                )
+                break
 
         logger.info(
             f"Finished executing tools with {len(tool_results_for_llm)} results."
         )
-        yield {"type": "final_tool_results", "results": tool_results_for_llm}
+        yield {
+            "type": "final_tool_results",
+            "results": tool_results_for_llm,
+            "stop_after_tools": stop_after_tools,
+        }
 
     async def run_single_tool(
         self, tool_name: str, tool_id: str, tool_input: Any
@@ -324,9 +387,32 @@ class ToolExecutor:
             text_content = f"Error: Tool '{tool_name}' is not available."
             content_items = [{"type": "error", "text": text_content}]
             is_error = True
+        elif tool_info.handler is not None:
+            try:
+                result_dict = await tool_info.handler(tool_input if isinstance(tool_input, dict) else {})
+                metadata = result_dict.get("metadata", {})
+                content_items = result_dict.get("content_items", [])
+
+                if content_items and content_items[0].get("type") == "error":
+                    is_error = True
+                    text_content = content_items[0].get(
+                        "text", "Unknown error from tool execution."
+                    )
+                elif content_items and content_items[0].get("type") == "text":
+                    text_content = content_items[0].get("text", "")
+            except Exception as e:
+                logger.exception(f"Error executing local tool '{tool_name}': {e}")
+                text_content = f"Error executing tool '{tool_name}': {e}"
+                content_items = [{"type": "error", "text": text_content}]
+                is_error = True
         elif not tool_info.related_server:
             logger.error(f"Tool '{tool_name}' does not have a related server defined.")
             text_content = f"Error: Configuration error for tool '{tool_name}'. No server specified."
+            content_items = [{"type": "error", "text": text_content}]
+            is_error = True
+        elif not self._mcp_client:
+            logger.error(f"Tool '{tool_name}' requires MCPClient but no client is configured.")
+            text_content = f"Error: Tool '{tool_name}' is unavailable because no MCP client is configured."
             content_items = [{"type": "error", "text": text_content}]
             is_error = True
         else:

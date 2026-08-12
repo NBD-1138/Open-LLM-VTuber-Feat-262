@@ -1,12 +1,25 @@
-from typing import Dict, List, Optional, Callable, TypedDict
+from typing import Any, Dict, List, Optional, Callable, TypedDict, TYPE_CHECKING
 from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
 import json
 from enum import Enum
+from datetime import datetime
+from uuid import uuid4
 import numpy as np
 from loguru import logger
 
+if TYPE_CHECKING:
+    from .live.publisher import LivePublisher
+
 from .service_context import ServiceContext
+from .agent.output_types import DisplayText
+from .automation import (
+    AutomationAssistantCoordinator,
+    AutomationConfirmationResponseMessage,
+    AutomationSpeakFixedMessage,
+    AutomationTransport,
+    parse_automation_message,
+)
 from .chat_group import (
     ChatGroupManager,
     handle_group_operation,
@@ -53,9 +66,40 @@ class WSMessage(TypedDict, total=False):
     text: Optional[str]
     audio: Optional[List[float]]
     images: Optional[List[str]]
+    files: Optional[list[dict[str, str]]]
     history_uid: Optional[str]
     file: Optional[str]
     display_text: Optional[dict]
+    request_id: Optional[str]
+    profile_id: Optional[str]
+    command_id: Optional[str]
+    source: Optional[str]
+    variables: Optional[dict]
+    status: Optional[str]
+    duration_ms: Optional[int]
+    error: Optional[str]
+    emergency_stopped: Optional[bool]
+    profiles: Optional[list[dict]]
+    active_profile_id: Optional[str]
+    interrupt_policy: Optional[str]
+    revision: Optional[int]
+    capabilities: Optional[list[dict]]
+    action: Optional[str]
+    llm_automation_enabled: Optional[bool]
+    allow_autonomous_harmless_commands: Optional[bool]
+    allow_autonomous_low_risk_commands: Optional[bool]
+    confirmation_timeout_ms: Optional[int]
+    max_pending_confirmations: Optional[int]
+    announce_blocked_command_requests: Optional[bool]
+    include_command_suggestions_in_speech: Optional[bool]
+    result_acknowledgements_enabled: Optional[bool]
+    confirmation_phrases: Optional[list[str]]
+    cancellation_phrases: Optional[list[str]]
+    metadata: Optional[dict[str, Any]]
+    forwarded: Optional[bool]
+    speaking: Optional[bool]
+    timestamp: Optional[str]
+    confidence: Optional[float]
 
 
 class WebSocketHandler:
@@ -69,6 +113,16 @@ class WebSocketHandler:
         self.current_conversation_tasks: Dict[str, Optional[asyncio.Task]] = {}
         self.default_context_cache = default_context_cache
         self.received_data_buffers: Dict[str, np.ndarray] = {}
+        self.automation_transport = AutomationTransport(self._send_client_message)
+        self.automation_assistant = AutomationAssistantCoordinator(
+            self.automation_transport,
+            self._send_client_message,
+            self._send_fixed_speech_text,
+            self._can_start_assistant_conversation,
+            self._start_assistant_conversation,
+        )
+        self.live_publisher: Optional["LivePublisher"] = None
+        self.status_snapshot_provider: Optional[Callable[[], Any]] = None
 
         # Message handlers mapping
         self._message_handlers = self._init_message_handlers()
@@ -95,7 +149,77 @@ class WebSocketHandler:
             "audio-play-start": self._handle_audio_play_start,
             "request-init-config": self._handle_init_config_request,
             "heartbeat": self._handle_heartbeat,
+            "update-talkback-tts": self._handle_update_talkback_tts,
+            "automation/status": self._handle_automation_transport_message,
+            "automation/result": self._handle_automation_transport_message,
+            "automation/cancel": self._handle_automation_transport_message,
+            "automation/emergency_stop": self._handle_automation_transport_message,
+            "automation/capabilities": self._handle_automation_assistant_message,
+            "automation/assistant-settings": self._handle_automation_assistant_message,
+            "automation/confirmation-response": self._handle_automation_confirmation_response,
+            "automation/voice-command-ambiguity-response": self._handle_automation_assistant_message,
+            "automation/voice-command-resolve-test": self._handle_automation_assistant_message,
+            "automation/speak-fixed": self._handle_automation_speak_fixed,
+            "assistant/active-application": self._handle_automation_assistant_message,
+            "assistant/context-sync": self._handle_automation_assistant_message,
+            "assistant/player-state": self._handle_automation_assistant_message,
+            "assistant/voice-command-state": self._handle_automation_assistant_message,
+            "frontend-playback-complete": self._handle_frontend_playback_complete,
         }
+
+    def register_live_publisher(self, publisher: "LivePublisher") -> None:
+        """Register the live publisher so live integrations can use websocket broadcasts."""
+        self.live_publisher = publisher
+
+    def register_status_snapshot_provider(
+        self,
+        provider: Callable[[], Any],
+    ) -> None:
+        """Register a provider that returns status messages for newly connected clients."""
+        self.status_snapshot_provider = provider
+
+    def _can_start_assistant_conversation(self, client_uid: str) -> bool:
+        websocket = self.client_connections.get(client_uid)
+        context = self.client_contexts.get(client_uid)
+        if websocket is None or context is None:
+            return False
+
+        group = self.chat_group_manager.get_client_group(client_uid)
+        task_key = group.group_id if group and len(group.members) > 1 else client_uid
+        task = self.current_conversation_tasks.get(task_key)
+        return task is None or task.done()
+
+    async def _start_assistant_conversation(
+        self,
+        client_uid: str,
+        text: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        websocket = self.client_connections.get(client_uid)
+        context = self.client_contexts.get(client_uid)
+        if websocket is None or context is None:
+            return False
+        if not self._can_start_assistant_conversation(client_uid):
+            return False
+
+        await handle_conversation_trigger(
+            msg_type="text-input",
+            data={
+                "type": "text-input",
+                "text": text,
+                "metadata": metadata,
+            },
+            client_uid=client_uid,
+            context=context,
+            websocket=websocket,
+            client_contexts=self.client_contexts,
+            client_connections=self.client_connections,
+            chat_group_manager=self.chat_group_manager,
+            received_data_buffers=self.received_data_buffers,
+            current_conversation_tasks=self.current_conversation_tasks,
+            broadcast_to_group=self.broadcast_to_group,
+        )
+        return True
 
     async def handle_new_connection(
         self, websocket: WebSocket, client_uid: str
@@ -144,6 +268,8 @@ class WebSocketHandler:
         self.received_data_buffers[client_uid] = np.array([])
 
         self.chat_group_manager.client_group_map[client_uid] = ""
+        self.automation_transport.register_client(client_uid)
+        self.automation_assistant.register_client(client_uid)
         await self.send_group_update(websocket, client_uid)
 
     async def _send_initial_messages(
@@ -171,9 +297,33 @@ class WebSocketHandler:
 
         # Send initial group status
         await self.send_group_update(websocket, client_uid)
+        await self._send_status_snapshots(websocket)
+        await self.automation_assistant.send_state_snapshot(client_uid)
 
         # Start microphone
         await websocket.send_text(json.dumps({"type": "control", "text": "start-mic"}))
+
+    async def _send_status_snapshots(self, websocket: WebSocket) -> None:
+        provider = self.status_snapshot_provider
+        if not provider:
+            return
+
+        try:
+            snapshots = provider()
+            if asyncio.iscoroutine(snapshots):
+                snapshots = await snapshots
+        except Exception as exc:
+            logger.warning(f"Failed to build live status snapshots: {exc}")
+            return
+
+        if snapshots is None:
+            return
+
+        messages = snapshots if isinstance(snapshots, list) else [snapshots]
+        for message in messages:
+            if not message:
+                continue
+            await websocket.send_text(json.dumps(message))
 
     async def _init_service_context(
         self, send_text: Callable, client_uid: str
@@ -198,6 +348,7 @@ class WebSocketHandler:
             tool_adapter=self.default_context_cache.tool_adapter,
             send_text=send_text,
             client_uid=client_uid,
+            local_tools_factory=self._build_local_tools_for_context,
         )
         return session_service_context
 
@@ -224,9 +375,14 @@ class WebSocketHandler:
                     continue
                 except Exception as e:
                     logger.error(f"Error processing message: {e}")
-                    await websocket.send_text(
-                        json.dumps({"type": "error", "message": str(e)})
-                    )
+                    try:
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(e)})
+                        )
+                    except Exception as send_error:
+                        logger.warning(
+                            f"Failed to send websocket error response to {client_uid}: {send_error!r}"
+                        )
                     continue
 
         except WebSocketDisconnect:
@@ -280,6 +436,7 @@ class WebSocketHandler:
     async def handle_disconnect(self, client_uid: str) -> None:
         """Handle client disconnection"""
         group = self.chat_group_manager.get_client_group(client_uid)
+        context = self.client_contexts.get(client_uid)
         if group:
             await handle_group_interrupt(
                 group_id=group.group_id,
@@ -301,6 +458,8 @@ class WebSocketHandler:
         self.client_connections.pop(client_uid, None)
         self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
+        self.automation_transport.unregister_client(client_uid)
+        self.automation_assistant.unregister_client(client_uid)
         if client_uid in self.current_conversation_tasks:
             task = self.current_conversation_tasks[client_uid]
             if task and not task.done():
@@ -308,7 +467,6 @@ class WebSocketHandler:
             self.current_conversation_tasks.pop(client_uid, None)
 
         # Call context close to clean up resources (e.g., MCPClient)
-        context = self.client_contexts.get(client_uid)
         if context:
             await context.close()
 
@@ -317,10 +475,13 @@ class WebSocketHandler:
 
     async def _cleanup_failed_connection(self, client_uid: str) -> None:
         """Clean up failed connection data"""
+        context = self.client_contexts.get(client_uid)
         self.client_connections.pop(client_uid, None)
         self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
         self.chat_group_manager.client_group_map.pop(client_uid, None)
+        self.automation_transport.unregister_client(client_uid)
+        self.automation_assistant.unregister_client(client_uid)
 
         if client_uid in self.current_conversation_tasks:
             task = self.current_conversation_tasks[client_uid]
@@ -328,6 +489,8 @@ class WebSocketHandler:
                 task.cancel()
             self.current_conversation_tasks.pop(client_uid, None)
 
+        if context:
+            await context.close()
         message_handler.cleanup_client(client_uid)
 
     async def broadcast_to_group(
@@ -340,6 +503,16 @@ class WebSocketHandler:
             client_connections=self.client_connections,
             exclude_uid=exclude_uid,
         )
+
+    async def _send_client_message(self, client_uid: str, message: dict) -> None:
+        websocket = self.client_connections.get(client_uid)
+        if websocket is None:
+            logger.debug(f"Skipping send to disconnected client: {client_uid}")
+            return
+        try:
+            await websocket.send_text(json.dumps(message))
+        except Exception as e:
+            logger.warning(f"Failed to send client message to {client_uid}: {e!r}")
 
     async def send_group_update(self, websocket: WebSocket, client_uid: str):
         """Sends group information to a client"""
@@ -514,6 +687,119 @@ class WebSocketHandler:
         self, websocket: WebSocket, client_uid: str, data: WSMessage
     ) -> None:
         """Handle triggers that start a conversation"""
+        async def finish_suppressed_interaction() -> None:
+            await websocket.send_text(json.dumps({"type": "force-new-message"}))
+            await websocket.send_text(
+                json.dumps({"type": "control", "text": "conversation-chain-end"})
+            )
+
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        input_source = str(metadata.get("source") or "player").lower()
+
+        if data.get("type") == "text-input":
+            input_text = str(data.get("text") or "").strip()
+            if (
+                input_text
+                and input_source != "twitch"
+                and await self.automation_assistant.maybe_handle_confirmation_phrase(
+                client_uid, input_text
+                )
+            ):
+                await finish_suppressed_interaction()
+                return
+            if input_text:
+                suppress, next_metadata = (
+                    await self.automation_assistant.prepare_conversation_metadata(
+                        client_uid,
+                        input_text,
+                        metadata,
+                        source=input_source or "player",
+                    )
+                )
+                if suppress:
+                    if input_source != "twitch":
+                        await finish_suppressed_interaction()
+                    return
+                data = dict(data)
+                data["metadata"] = next_metadata
+
+        if (
+            data.get("type") == "mic-audio-end"
+            and self.automation_assistant.has_pending_confirmations(client_uid)
+        ):
+            audio_buffer = self.received_data_buffers.get(client_uid)
+            if audio_buffer is not None and audio_buffer.size > 0:
+                context = self.client_contexts[client_uid]
+                try:
+                    input_text = await context.asr_engine.async_transcribe_np(audio_buffer)
+                    self.received_data_buffers[client_uid] = np.array([])
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "user-input-transcription",
+                                "text": input_text,
+                            }
+                        )
+                    )
+                    if await self.automation_assistant.maybe_handle_confirmation_phrase(
+                        client_uid, input_text
+                    ):
+                        await finish_suppressed_interaction()
+                        return
+                    suppress, next_metadata = (
+                        await self.automation_assistant.prepare_conversation_metadata(
+                            client_uid,
+                            input_text,
+                            metadata,
+                            source="player_voice",
+                        )
+                    )
+                    if suppress:
+                        await finish_suppressed_interaction()
+                        return
+                    data = dict(data)
+                    data["type"] = "text-input"
+                    data["text"] = input_text
+                    data["metadata"] = next_metadata
+                except Exception as exc:
+                    logger.warning(
+                        f"Failed to pre-process pending confirmation audio for {client_uid}: {exc}"
+                    )
+        elif data.get("type") == "mic-audio-end":
+            audio_buffer = self.received_data_buffers.get(client_uid)
+            if audio_buffer is not None and audio_buffer.size > 0:
+                context = self.client_contexts[client_uid]
+                try:
+                    input_text = await context.asr_engine.async_transcribe_np(audio_buffer)
+                    self.received_data_buffers[client_uid] = np.array([])
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "user-input-transcription",
+                                "text": input_text,
+                            }
+                        )
+                    )
+                    suppress, next_metadata = (
+                        await self.automation_assistant.prepare_conversation_metadata(
+                            client_uid,
+                            input_text,
+                            metadata,
+                            source="player_voice",
+                        )
+                    )
+                    if suppress:
+                        await finish_suppressed_interaction()
+                        return
+                    data = dict(data)
+                    data["type"] = "text-input"
+                    data["text"] = input_text
+                    data["metadata"] = next_metadata
+                except Exception as exc:
+                    logger.warning(
+                        f"Failed to prepare conversation context for audio input {client_uid}: {exc}"
+                    )
+
         await handle_conversation_trigger(
             msg_type=data.get("type", ""),
             data=data,
@@ -562,6 +848,8 @@ class WebSocketHandler:
         """
         Handle audio playback start notification
         """
+        if not data.get("forwarded"):
+            await self.automation_assistant.set_vtuber_speaking(client_uid, True)
         group_members = self.chat_group_manager.get_group_members(client_uid)
         if len(group_members) > 1:
             display_text = data.get("display_text")
@@ -575,6 +863,12 @@ class WebSocketHandler:
                 await self.broadcast_to_group(
                     group_members, silent_payload, exclude_uid=client_uid
                 )
+
+    async def _handle_frontend_playback_complete(
+        self, websocket: WebSocket, client_uid: str, data: WSMessage
+    ) -> None:
+        del websocket, data
+        await self.automation_assistant.set_vtuber_speaking(client_uid, False)
 
     async def _handle_group_info(
         self, websocket: WebSocket, client_uid: str, data: WSMessage
@@ -610,3 +904,185 @@ class WebSocketHandler:
             await websocket.send_json({"type": "heartbeat-ack"})
         except Exception as e:
             logger.error(f"Error sending heartbeat acknowledgment: {e}")
+
+    async def _handle_update_talkback_tts(
+        self, websocket: WebSocket, client_uid: str, data: WSMessage
+    ) -> None:
+        """Update talkback TTS settings for live integrations."""
+        publisher = self.live_publisher
+        if not publisher:
+            logger.warning(
+                "Talkback TTS update received but no live publisher is registered."
+            )
+            return
+
+        enabled = data.get("enabled")
+        voice = data.get("voice")
+        engine = data.get("engine")
+        publisher.update_talkback_tts(
+            enabled=bool(enabled) if isinstance(enabled, bool) else None,
+            voice=str(voice).strip() if isinstance(voice, str) else None,
+            engine=str(engine).strip() if isinstance(engine, str) else None,
+        )
+
+        provider = self.status_snapshot_provider
+        if not provider:
+            return
+
+        snapshots = provider()
+        if asyncio.iscoroutine(snapshots):
+            snapshots = await snapshots
+        if snapshots is None:
+            return
+
+        for message in snapshots if isinstance(snapshots, list) else [snapshots]:
+            if message:
+                await self.broadcast_json(message)
+
+    async def _handle_automation_transport_message(
+        self, websocket: WebSocket, client_uid: str, data: WSMessage
+    ) -> None:
+        """Handle general automation transport messages."""
+        message = await self.automation_transport.handle_incoming_message(
+            client_uid, data
+        )
+        await self.automation_assistant.handle_transport_message(client_uid, message)
+
+    async def _handle_automation_assistant_message(
+        self, websocket: WebSocket, client_uid: str, data: WSMessage
+    ) -> None:
+        """Handle assistant capability and settings synchronization messages."""
+        del websocket
+        message = parse_automation_message(data)
+        await self.automation_assistant.handle_transport_message(client_uid, message)
+
+    async def _handle_automation_confirmation_response(
+        self, websocket: WebSocket, client_uid: str, data: WSMessage
+    ) -> None:
+        """Handle frontend confirmation and rejection actions."""
+        del websocket
+        message = AutomationConfirmationResponseMessage.model_validate(data)
+        await self.automation_assistant.handle_confirmation_response(
+            client_uid, message
+        )
+
+    async def _handle_automation_speak_fixed(
+        self, websocket: WebSocket, client_uid: str, data: WSMessage
+    ) -> None:
+        """Generate fixed TTS speech for automation without going through the LLM."""
+        message = AutomationSpeakFixedMessage.model_validate(data)
+        del websocket
+        await self._send_fixed_speech_text(
+            client_uid,
+            message.text,
+            request_id=message.request_id,
+        )
+
+    def _build_local_tools_for_context(self, context: ServiceContext):
+        return self.automation_assistant.build_local_tools(context.client_uid)
+
+    async def _send_fixed_speech_text(
+        self,
+        client_uid: str,
+        text: str,
+        request_id: Optional[str] = None,
+    ) -> None:
+        websocket = self.client_connections.get(client_uid)
+        context = self.client_contexts.get(client_uid)
+        if websocket is None or context is None:
+            raise ValueError(f"Client connection not found: {client_uid}")
+
+        character_name = (
+            context.character_config.character_name
+            or context.character_config.conf_name
+        )
+        display_text = DisplayText(
+            text=text,
+            name=character_name,
+            avatar=context.character_config.avatar or None,
+        )
+
+        audio_path = None
+        try:
+            file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid4())[:8]}"
+            audio_path = await context.tts_engine.async_generate_audio(
+                text=text,
+                file_name_no_ext=file_name,
+            )
+            payload = prepare_audio_payload(
+                audio_path=audio_path,
+                display_text=display_text,
+                actions=None,
+            )
+            if request_id:
+                payload["automation_request_id"] = request_id
+            await websocket.send_text(json.dumps(payload))
+        except Exception as e:
+            logger.error(f"Automation speak_fixed failed: {e}")
+            if request_id:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "automation/speak-fixed-error",
+                            "request_id": request_id,
+                            "message": "Unable to generate speech for automation.",
+                        }
+                    )
+                )
+        finally:
+            if audio_path:
+                context.tts_engine.remove_file(audio_path)
+
+    async def broadcast_json(self, message: dict) -> None:
+        """Broadcast a JSON-serializable payload to every connected websocket client."""
+        payload = json.dumps(message)
+        disconnect: list[str] = []
+        for client_uid, connection in list(self.client_connections.items()):
+            try:
+                await connection.send_text(payload)
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to send broadcast to client {client_uid}: {exc}"
+                )
+                disconnect.append(client_uid)
+
+        for uid in disconnect:
+            await self.handle_disconnect(uid)
+
+    async def handle_system_notification(
+        self,
+        text: str,
+        category: str,
+        source: str,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Broadcast a live notification as external chat so the normal LLM path can react."""
+        display_text = f"[{source.capitalize()}] {text}"
+        meta: Dict[str, Any] = {
+            "category": category,
+            "source": source,
+        }
+        if metadata:
+            meta.update(metadata)
+
+        if source == "twitch":
+            await self.automation_assistant.record_twitch_event_for_all_clients(
+                display_text,
+                meta,
+            )
+        else:
+            await self.automation_assistant.record_system_warning_for_all_clients(
+                display_text,
+                source=source,
+            )
+
+        await self.broadcast_json(
+            {
+                "type": "external-chat",
+                "source": source,
+                "user": source,
+                "text": display_text,
+                "metadata": meta,
+            }
+        )
